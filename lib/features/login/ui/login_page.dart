@@ -4,7 +4,8 @@ import 'package:chat_app/core/helper/show_snak_bar.dart';
 import 'package:chat_app/core/routing/routes.dart';
 import 'package:chat_app/core/widgets/custom_button.dart';
 import 'package:chat_app/core/widgets/custom_text_field.dart';
-import 'package:chat_app/features/login/logic/cubit/cubit/login_cubit.dart';
+import 'package:chat_app/features/chat/logic/cubit/chat_cubit.dart';
+import 'package:chat_app/features/login/logic/cubit/login_cubit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -23,6 +24,7 @@ class LoginPage extends StatelessWidget {
         if (state is LoginLoading) {
           isLoading = true;
         } else if (state is LoginSuccess) {
+          BlocProvider.of<ChatCubit>(context).getMessages();
           context.pushNamed(Routes.chatPage);
           isLoading = false;
         } else if (state is LoginFailure) {

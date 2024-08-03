@@ -1,55 +1,34 @@
 import 'package:chat_app/core/helper/constants.dart';
 import 'package:chat_app/core/widgets/chat_buble.dart';
 import 'package:chat_app/core/widgets/custom_text_field.dart';
-import 'package:chat_app/features/models/message.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:chat_app/features/chat/logic/cubit/chat_cubit.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-class ChatPage extends StatefulWidget {
-  @override
-  _ChatPageState createState() => _ChatPageState();
-}
+class ChatPage extends StatelessWidget {
+  final ScrollController _scrollController = ScrollController();
+  final TextEditingController _textController = TextEditingController();
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
-class _ChatPageState extends State<ChatPage> {
-  final _controller = ScrollController();
-  final secureStorage = const FlutterSecureStorage();
-
-  CollectionReference messages =
-      FirebaseFirestore.instance.collection(kMessagesCollections);
-  TextEditingController controller = TextEditingController();
-
-  Future<String?> fetchEmail() async {
-    return await secureStorage.read(key: 'email');
-  }
-
-  void _sendMessage(String message) async {
-    final email = await fetchEmail();
-    if (email != null && message.isNotEmpty) {
-      messages.add(
-        {
-          kMessage: message,
-          kCreatedAt: DateTime.now(),
-          kID: email,
-        },
-      );
-      controller.clear();
-      _controller.animateTo(
-        0,
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeIn,
-      );
-    }
+  Future<String?> _fetchEmail() async {
+    return await _secureStorage.read(key: 'email');
   }
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<String?>(
-      future: fetchEmail(),
+      future: _fetchEmail(),
       builder: (context, emailSnapshot) {
         if (emailSnapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (emailSnapshot.hasError) {
+          return Scaffold(
+            body: Center(child: Text('Error: ${emailSnapshot.error}')),
           );
         }
 
@@ -66,9 +45,7 @@ class _ChatPageState extends State<ChatPage> {
                   kLogo,
                   height: 50,
                 ),
-                const SizedBox(
-                  width: 5,
-                ),
+                const SizedBox(width: 5),
                 const Text(
                   'Chat Duo',
                   style: TextStyle(
@@ -80,72 +57,77 @@ class _ChatPageState extends State<ChatPage> {
             ),
             centerTitle: true,
           ),
-          body: StreamBuilder<QuerySnapshot>(
-            stream: messages.orderBy(kCreatedAt, descending: true).snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              if (snapshot.hasError) {
-                return Center(child: Text('Error: ${snapshot.error}'));
-              }
-
-              if (snapshot.hasData) {
-                List<Message> messagesList = snapshot.data!.docs
-                    .map((doc) =>
-                        Message.fromJson(doc.data() as Map<String, dynamic>))
-                    .toList();
-
-                return Column(
-                  children: [
-                    Expanded(
-                      child: ListView.builder(
-                        reverse: true,
-                        controller: _controller,
-                        itemCount: messagesList.length,
-                        itemBuilder: (context, index) {
-                          return messagesList[index].id == email
-                              ? ChatBubble(message: messagesList[index])
-                              : ChatBubbleForFriend(
-                                  message: messagesList[index]);
-                        },
+          body: Column(
+            children: [
+              Expanded(
+                child: BlocBuilder<ChatCubit, ChatState>(
+                  builder: (context, state) {
+                    var messagesList =
+                        BlocProvider.of<ChatCubit>(context).messagesList;
+                    return ListView.builder(
+                      reverse: true,
+                      controller: _scrollController,
+                      itemCount: messagesList.length,
+                      itemBuilder: (context, index) {
+                        final message = messagesList[index];
+                        return message.id == email
+                            ? ChatBubble(message: message)
+                            : ChatBubbleForFriend(message: message);
+                      },
+                    );
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: CustomFormTextField(
+                  controller: _textController,
+                  onSubmitted: (data) {
+                    if (email != null) {
+                      BlocProvider.of<ChatCubit>(context)
+                          .sendMessages(message: data, email: email);
+                      _textController.clear();
+                      _scrollController.animateTo(
+                        0,
+                        duration: const Duration(milliseconds: 500),
+                        curve: Curves.easeIn,
+                      );
+                    }
+                  },
+                  inputDecoration: InputDecoration(
+                    hintText: 'Send Message',
+                    suffixIcon: GestureDetector(
+                      child: const Icon(
+                        Icons.send,
+                        color: kPrimaryColor,
+                      ),
+                      onTap: () {
+                        final data = _textController.text;
+                        if (email != null && data.isNotEmpty) {
+                          BlocProvider.of<ChatCubit>(context)
+                              .sendMessages(message: data, email: email);
+                          _textController.clear();
+                          _scrollController.animateTo(
+                            0,
+                            duration: const Duration(milliseconds: 500),
+                            curve: Curves.easeIn,
+                          );
+                        }
+                      },
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(
+                        color: kPrimaryColor,
                       ),
                     ),
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: CustomFormTextField(
-                        controller: controller,
-                        onSubmitted: _sendMessage,
-                        inputDecoration: InputDecoration(
-                          hintText: 'Send Message',
-                          suffixIcon: GestureDetector(
-                            child: const Icon(
-                              Icons.send,
-                              color: kPrimaryColor,
-                            ),
-                            onTap: () {
-                              _sendMessage(controller.text);
-                            },
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(
-                              color: kPrimaryColor,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              } else {
-                return const Center(child: Text('please Enter a message'));
-              }
-            },
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       },
